@@ -1,0 +1,11 @@
+[package]
+name = "iron-jwt"
+description = "Token based authentication middleware based on JSON Web Token (a.k.a. JWT)"
+version = "0.1.0"
+authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
+
+[dependencies]
+iron = "~0.5"
+jsonwebtoken = "~2.0"
+serde = "~1.0"
+serde_json = "~1.0"
