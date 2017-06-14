@@ -15,19 +15,14 @@ use router::Router;
 use iron_jwt::{JWTConfig, JWTMiddleware};
 
 #[derive(Serialize, Deserialize)]
-struct Claims {}
+struct Claims {
+    sub: String,
+}
 
 impl typemap::Key for Claims {
     type Value = Self;
 }
 
-fn hello(_req: &mut Request) -> IronResult<Response> {
-    Ok(Response::with((status::Ok, "Hello, JWT")))
-}
-
-fn privileged(_req: &mut Request) -> IronResult<Response> {
-    Ok(Response::with((status::Ok, "Privileged")))
-}
 
 #[derive(Debug)]
 struct AuthError;
@@ -59,7 +54,7 @@ impl Handler for AuthHandler {
             return Err(IronError::new(AuthError, status::Unauthorized));
         }
 
-        let claims = Claims {};
+        let claims = Claims { sub: "user1".to_owned() };
         let access_token = self.0.generate_token(claims).unwrap();
         #[derive(Serialize)]
         struct Payload {
@@ -70,6 +65,16 @@ impl Handler for AuthHandler {
         Ok(Response::with((status::Created, payload)))
     }
 }
+
+
+fn hello(_req: &mut Request) -> IronResult<Response> {
+    Ok(Response::with((status::Ok, "Hello, JWT")))
+}
+
+fn privileged(_req: &mut Request) -> IronResult<Response> {
+    Ok(Response::with((status::Ok, "Privileged")))
+}
+
 
 fn main() {
     let secret_key = "secret-key";
@@ -83,8 +88,7 @@ fn main() {
     let mut router = Router::new();
     router.get("/", hello, "hello");
 
-    let mut privileged = Chain::new(privileged);
-    privileged.link_before(jwt.clone());
+    let privileged = jwt.validated(privileged);
     router.get("/privileged", privileged, "privileged");
 
     let auth = AuthHandler(jwt);

@@ -6,7 +6,7 @@ extern crate serde_json;
 use std::fmt;
 use std::error::Error;
 use std::marker::PhantomData;
-use iron::{Request, IronResult, IronError};
+use iron::{Request, IronResult, IronError, Handler, Chain};
 use iron::headers::{Authorization, Bearer};
 use iron::middleware::BeforeMiddleware;
 use iron::status;
@@ -100,8 +100,14 @@ impl<T> JWTMiddleware<T>
         jwt::decode(&token,
                     self.config.secret.as_slice(),
                     &self.config.validation)
-            .map_err(|err| IronError::new(err, status::Unauthorized))
-            .map(|token_data| Some(token_data.claims))
+        .map_err(|err| IronError::new(err, status::Unauthorized))
+        .map(|token_data| Some(token_data.claims))
+    }
+
+    pub fn validated<H: Handler>(&self, handler: H) -> Chain {
+        let mut chain = Chain::new(handler);
+        chain.link_before(self.clone());
+        chain
     }
 }
 
