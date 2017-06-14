@@ -3,6 +3,7 @@ extern crate jsonwebtoken as jwt;
 extern crate serde;
 extern crate serde_json;
 
+use std::sync::Arc;
 use std::fmt;
 use std::error::Error;
 use std::marker::PhantomData;
@@ -54,43 +55,25 @@ pub struct JWTConfig {
 }
 
 
-///
-pub struct JWTMiddleware<T>
+#[derive(Clone)]
+struct Inner<T>
     where for<'de> T: JWTClaims<'de>
 {
     config: JWTConfig,
     _marker: PhantomData<T>,
 }
 
-impl<T> Clone for JWTMiddleware<T>
+impl<T> Inner<T>
     where for<'de> T: JWTClaims<'de>
 {
-    fn clone(&self) -> Self {
-        JWTMiddleware {
-            config: self.config.clone(),
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<T> JWTMiddleware<T>
-    where for<'de> T: JWTClaims<'de>
-{
-    pub fn new(config: JWTConfig) -> Self {
-        JWTMiddleware {
-            config,
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn generate_token(&self, claims: T) -> IronResult<String> {
+    fn generate_token(&self, claims: T) -> IronResult<String> {
         let claims = serde_json::to_value(claims)
             .map_err(|err| IronError::new(err, status::InternalServerError))?;
         jwt::encode(&self.config.header, &claims, self.config.secret.as_slice())
             .map_err(|err| IronError::new(err, status::InternalServerError))
     }
 
-    pub fn extract_claims(&self, req: &mut Request) -> IronResult<Option<T>> {
+    fn extract_claims(&self, req: &mut Request) -> IronResult<Option<T>> {
         let &Authorization(Bearer { ref token }) =
             match req.headers
                      .get::<Authorization<Bearer>>() {
@@ -103,19 +86,56 @@ impl<T> JWTMiddleware<T>
         .map_err(|err| IronError::new(err, status::Unauthorized))
         .map(|token_data| Some(token_data.claims))
     }
+}
+
+
+
+#[derive(Clone)]
+pub struct JWTMiddleware<T>
+    where for<'de> T: JWTClaims<'de>
+{
+    inner: Arc<Inner<T>>,
+}
+
+impl<T> JWTMiddleware<T>
+    where for<'de> T: JWTClaims<'de>
+{
+    pub fn new(config: JWTConfig) -> Self {
+        let inner = Inner {
+            config,
+            _marker: PhantomData,
+        };
+        JWTMiddleware { inner: Arc::new(inner) }
+    }
+
+    #[deprecated]
+    pub fn generate_token(&self, claims: T) -> IronResult<String> {
+        self.inner.generate_token(claims)
+    }
 
     pub fn validated<H: Handler>(&self, handler: H) -> Chain {
         let mut chain = Chain::new(handler);
-        chain.link_before(self.clone());
+        let validator = JWTValidateMiddleware { inner: self.inner.clone() };
+        chain.link_before(validator);
         chain
     }
 }
 
-impl<T> BeforeMiddleware for JWTMiddleware<T>
+
+
+#[derive(Clone)]
+struct JWTValidateMiddleware<T>
+    where for<'de> T: JWTClaims<'de>
+{
+    inner: Arc<Inner<T>>,
+}
+
+impl<T> BeforeMiddleware for JWTValidateMiddleware<T>
     where for<'de> T: JWTClaims<'de> + typemap::Key<Value = T>
 {
     fn before(&self, req: &mut Request) -> IronResult<()> {
-        self.extract_claims(req)
+        self.inner
+            .extract_claims(req)
             .and_then(|c| c.ok_or(IronError::new(JWTError(""), status::Unauthorized)))
             .map(|claims| { req.extensions.insert::<T>(claims); })
     }
