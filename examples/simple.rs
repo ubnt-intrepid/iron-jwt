@@ -14,7 +14,7 @@ use bodyparser::Struct;
 use router::Router;
 use iron_jwt::{JWTConfig, JWTMiddleware};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Claims {
     sub: String,
 }
@@ -67,12 +67,14 @@ impl Handler for AuthHandler {
 }
 
 
-fn hello(_req: &mut Request) -> IronResult<Response> {
-    Ok(Response::with((status::Ok, "Hello, JWT")))
+fn public(req: &mut Request) -> IronResult<Response> {
+    let claims = req.extensions.get::<Claims>();
+    Ok(Response::with((status::Ok, format!("Public: {:?}", claims))))
 }
 
-fn privileged(_req: &mut Request) -> IronResult<Response> {
-    Ok(Response::with((status::Ok, "Privileged")))
+fn privileged(req: &mut Request) -> IronResult<Response> {
+    let claims = req.extensions.get::<Claims>();
+    Ok(Response::with((status::Ok, format!("Privileged: {:?}", claims))))
 }
 
 
@@ -86,7 +88,8 @@ fn main() {
     let jwt = JWTMiddleware::new(config);
 
     let mut router = Router::new();
-    router.get("/", hello, "hello");
+
+    router.get("/", public, "public");
 
     let privileged = jwt.validated(privileged);
     router.get("/privileged", privileged, "privileged");
