@@ -7,7 +7,6 @@ extern crate bodyparser;
 extern crate router;
 
 use iron::prelude::*;
-use iron::Handler;
 use iron::status;
 use iron::typemap;
 use bodyparser::Struct;
@@ -37,35 +36,33 @@ impl std::error::Error for AuthError {
     }
 }
 
-struct AuthHandler(JWTMiddleware<Claims>);
-impl Handler for AuthHandler {
-    fn handle(&self, req: &mut Request) -> IronResult<Response> {
-        #[derive(Clone, Deserialize)]
-        struct Params {
-            username: String,
-            password: String,
-        }
-        let params = req.get::<Struct<Params>>()
-                        .ok()
-                        .and_then(|p| p)
-                        .ok_or_else(|| IronError::new(AuthError, status::BadRequest))?;
-
-        if params.username != "user1" || params.password != "user1" {
-            return Err(IronError::new(AuthError, status::Unauthorized));
-        }
-
-        let claims = Claims { sub: "user1".to_owned() };
-        let access_token = self.0.generate_token(claims).unwrap();
-        #[derive(Serialize)]
-        struct Payload {
-            access_token: String,
-        }
-        let payload = Payload { access_token };
-        let payload = serde_json::to_string(&payload).unwrap();
-        Ok(Response::with((status::Created, payload)))
+fn auth(req: &mut Request) -> IronResult<Response> {
+    #[derive(Clone, Deserialize)]
+    struct Params {
+        username: String,
+        password: String,
     }
-}
+    let params = req.get::<Struct<Params>>()
+                    .ok()
+                    .and_then(|p| p)
+                    .ok_or_else(|| IronError::new(AuthError, status::BadRequest))?;
 
+    if params.username != "user1" || params.password != "user1" {
+        return Err(IronError::new(AuthError, status::Unauthorized));
+    }
+
+    let claims = Claims { sub: "user1".to_owned() };
+
+    let jwt = req.extensions.get::<JWTMiddleware<Claims>>().unwrap();
+    let access_token = jwt.generate_token(claims).unwrap();
+    #[derive(Serialize)]
+    struct Payload {
+        access_token: String,
+    }
+    let payload = Payload { access_token };
+    let payload = serde_json::to_string(&payload).unwrap();
+    Ok(Response::with((status::Created, payload)))
+}
 
 fn public(req: &mut Request) -> IronResult<Response> {
     let claims = req.extensions.get::<Claims>();
@@ -85,7 +82,7 @@ fn main() {
         header: Default::default(),
         validation: Default::default(),
     };
-    let jwt = JWTMiddleware::new(config);
+    let jwt = JWTMiddleware::<Claims>::new(config);
 
     let mut router = Router::new();
 
@@ -94,7 +91,8 @@ fn main() {
     let privileged = jwt.validated(privileged);
     router.get("/privileged", privileged, "privileged");
 
-    let auth = AuthHandler(jwt);
+    let mut auth = Chain::new(auth);
+    auth.link_before(jwt);
     router.post("/auth", auth, "auth");
 
     Iron::new(router).http("0.0.0.0:3000").unwrap();

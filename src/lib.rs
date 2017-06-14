@@ -90,11 +90,18 @@ impl<T> Inner<T>
 
 
 
-#[derive(Clone)]
 pub struct JWTMiddleware<T>
     where for<'de> T: JWTClaims<'de>
 {
     inner: Arc<Inner<T>>,
+}
+
+impl<T> Clone for JWTMiddleware<T>
+    where for<'de> T: JWTClaims<'de>
+{
+    fn clone(&self) -> Self {
+        JWTMiddleware { inner: self.inner.clone() }
+    }
 }
 
 impl<T> JWTMiddleware<T>
@@ -121,13 +128,35 @@ impl<T> JWTMiddleware<T>
     }
 }
 
+impl<T> typemap::Key for JWTMiddleware<T>
+    where for<'de> T: JWTClaims<'de>
+{
+    type Value = Self;
+}
+
+impl<T> BeforeMiddleware for JWTMiddleware<T>
+    where for<'de> T: JWTClaims<'de>
+{
+    fn before(&self, req: &mut Request) -> IronResult<()> {
+        req.extensions.insert::<Self>(self.clone());
+        Ok(())
+    }
+}
 
 
-#[derive(Clone)]
+
 struct JWTValidateMiddleware<T>
     where for<'de> T: JWTClaims<'de>
 {
     inner: Arc<Inner<T>>,
+}
+
+impl<T> Clone for JWTValidateMiddleware<T>
+    where for<'de> T: JWTClaims<'de>
+{
+    fn clone(&self) -> Self {
+        JWTValidateMiddleware { inner: self.inner.clone() }
+    }
 }
 
 impl<T> BeforeMiddleware for JWTValidateMiddleware<T>
