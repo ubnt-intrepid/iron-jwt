@@ -145,10 +145,18 @@ impl<T> BeforeMiddleware for JWTMiddleware<T>
 
 
 
-struct JWTValidateMiddleware<T>
+pub struct JWTValidateMiddleware<T>
     where for<'de> T: JWTClaims<'de>
 {
     inner: Arc<Inner<T>>,
+}
+
+impl<T> From<JWTMiddleware<T>> for JWTValidateMiddleware<T>
+    where for<'de> T: JWTClaims<'de>
+{
+    fn from(val: JWTMiddleware<T>) -> Self {
+        JWTValidateMiddleware { inner: val.inner }
+    }
 }
 
 impl<T> Clone for JWTValidateMiddleware<T>
